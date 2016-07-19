@@ -1,0 +1,188 @@
+<project name="antProject" default="all">
+
+    <property file="antproject.properties"/>
+
+    <path id="classpath">
+        <fileset dir="lib" includes="**/*.jar"/>
+    </path>
+
+    <path id="classpath.test">
+        <pathelement location="lib/junit-4.12.jar"/>
+        <pathelement location="lib/hamcrest-core-1.3.jar"/>
+        <pathelement location="lib/interfaces-2.0.2.jar"/>
+        <pathelement location="${main.classes}"/>
+    </path>
+
+    <path id="classpath.pmd">
+        <pathelement location="lib/pmd/pmd-java-5.4.2.jar"/>
+        <pathelement location="lib/pmd/pmd-core-5.4.2.jar"/>
+        <pathelement location="lib/pmd/commons-io-2.4.jar"/>
+        <pathelement location="lib/pmd/commons-lang3-3.4.jar"/>
+        <pathelement location="lib/pmd/jaxen-1.1.6.jar"/>
+        <pathelement location="lib/pmd/asm-5.0.4.jar"/>
+    </path>
+
+    <path id="classpath.cobertura">
+        <fileset dir="lib/cobertura">
+            <include name="cobertura-2.1.1.jar" />
+            <include name="lib/**/*.jar" />
+        </fileset>
+    </path>
+
+    <target name="clean" description="clean up">
+        <echo>Cleaning Up</echo>
+        <delete dir="${build.dir}"/>
+    </target>
+
+    <target name="make.dir" description="create dir">
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${main.classes}"/>
+        <mkdir dir="${tests.classes}"/>
+    </target>
+
+    <target name="make.style.report.dir" description="create dir for style reports">
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${checkstyle.lib.report}"/>
+        <mkdir dir="${pmd.report}"/>
+        <mkdir dir="${findbugs.report}"/>
+    </target>
+
+    <target name="make.junit.report.dir" description="create dir for jUnit report">
+        <mkdir dir="${build.dir}"/>
+        <mkdir dir="${junit.report.dir}"/>
+    </target>
+
+    <target name="make.test.cover.dir" description="create dir for code-cover via test">
+        <mkdir dir="${cobertura.report.dir}"/>
+    </target>
+
+    <target name="compile" depends="make.dir" description="compile source classes">
+        <javac destdir="${main.classes}" debug="true" classpathref="classpath" includeantruntime="false">
+            <src path="${main.src}"/>
+        </javac>
+    </target>
+
+    <target name="testcompile" depends="compile" description="compile test classes">
+        <javac destdir="${tests.classes}" debug="true" includeantruntime="false">
+            <classpath refid="classpath.test"/>
+            <src path="${test.src}"/>
+        </javac>
+    </target>
+
+    <target name="test" depends="testcompile, make.junit.report.dir" description="run tests">
+        <junit printsummary="yes" haltonfailure="yes">
+            <classpath refid="classpath.test"/>
+            <classpath location="${tests.classes}"/>
+
+            <test name="com.lofitskyi.test.TestableArrayCollectionImplTest" haltonfailure="no" outfile="${junit.report.dir}/TestableArrayCollection">
+                <formatter type="xml"/>
+            </test>
+
+            <test name="com.lofitskyi.test.IndexArrayIteratorTest" haltonfailure="no" outfile="${junit.report.dir}/IndexArrayIterator">
+                <formatter type="xml"/>
+            </test>
+
+        </junit>
+    </target>
+
+    <target name="jar" depends="compile" description="build jar file">
+        <jar destfile="build/antProject.jar">
+            <fileset dir="${main.classes}">
+                <include name="**/*.class"/>
+            </fileset>
+        </jar>
+    </target>
+
+    <target name="checkstyle" depends="make.style.report.dir, checkstyle-lib, pmd, find-bugs">
+        <echo>Look at reports in ./build/report</echo>
+    </target>
+
+    <target name="init-checkstyle-lib">
+        <taskdef resource="com/puppycrawl/tools/checkstyle/ant/checkstyle-ant-task.properties" classpath="lib/checkstyle-6.19-all.jar"/>
+    </target>
+
+    <target name="checkstyle-lib" description="check style" depends="init-checkstyle-lib">
+        <checkstyle config="${checkstyle.lib.config}" failonviolation="false">
+            <fileset dir="${main.src}" includes="**/*.java"/>
+            <formatter type="plain"/>
+            <formatter type="xml" toFile="${checkstyle.lib.report}/checkstyle_errors.xml"/>
+        </checkstyle>
+    </target>
+
+    <target name="pmd-init">
+        <taskdef name="pmd" classname="net.sourceforge.pmd.ant.PMDTask" classpathref="classpath.pmd"/>
+    </target>
+
+    <target name="pmd" depends="pmd-init">
+        <pmd shortFilenames="true">
+            <ruleset>rulesets/java/design.xml</ruleset>
+            <ruleset>java-basic</ruleset>
+            <formatter type="html" toFile="${pmd.report}/pmd_report.html">
+                <param name="linkPrefix" value="http://pmd.sourceforge.net/xref/"/>
+            </formatter>
+            <fileset dir="${main.src}">
+                <include name="*.java"/>
+            </fileset>
+        </pmd>
+    </target>
+
+    <target name="find-bugs-init">
+        <taskdef name="findbugs" classname="edu.umd.cs.findbugs.anttask.FindBugsTask" classpath="lib/findbugs-ant.jar"/>
+    </target>
+
+    <target name="find-bugs" depends="jar, find-bugs-init">
+        <findbugs home="${findbugs.home}"
+                  output="html"
+                  outputFile="${findbugs.report}/report.html" >
+            <sourcepath location="${main.src}"/>
+            <class location="${jar}" />
+        </findbugs>
+    </target>
+
+    <target name="cobertura-init" depends="testcompile">
+        <taskdef classpathref="classpath.cobertura" resource="tasks.properties" />
+    </target>
+
+    <target name="cobertura-instrument" depends="cobertura-init">
+        <cobertura-instrument todir="${cob.instrumented.dir}">
+            <fileset dir="${main.classes}">
+                <include name="**/*.class"/>
+            </fileset>
+        </cobertura-instrument>
+    </target>
+
+    <target name="coverage" depends="cobertura-instrument">
+        <junit fork="yes" dir="./" haltonfailure="yes" failureProperty="test.failed">
+
+            <sysproperty key="net.sourceforge.cobertura.datafile"
+                         file="${basedir}/cobertura.ser" />
+
+            <classpath location="${cob.instrumented.dir}"/>
+            <classpath refid="classpath.test"/>
+            <classpath refid="classpath.cobertura"/>
+            <classpath location="${tests.classes}"/>
+
+            <test name="com.lofitskyi.test.TestableArrayCollectionImplTest" haltonfailure="no"/>
+
+            <test name="com.lofitskyi.test.IndexArrayIteratorTest" haltonfailure="no"/>
+
+        </junit>
+    </target>
+
+    <target name="cobertura" depends="coverage, make.test.cover.dir">
+        <cobertura-report srcdir="${main.src}" destdir="${cobertura.report.dir}" datafile="./cobertura.ser"/>
+    </target>
+
+    <target name="testreport" depends="test">
+        <junitreport todir="${junit.report.dir}">
+            <fileset dir="${junit.report.dir}">
+                <include name="*.xml"/>
+            </fileset>
+            <report todir="${junit.report.dir}/html"/>
+        </junitreport>
+    </target>
+
+    <target name="all" depends="compile, testcompile, jar, test, checkstyle, cobertura, testreport">
+        <echo>Building up whole project completed</echo>
+    </target>
+</project>
